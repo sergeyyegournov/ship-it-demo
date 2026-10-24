@@ -32,7 +32,7 @@ jobs:
             Compare the diff with plans/ and spec/ files referenced in the PR description.
             Post one summary comment. Do not approve or request changes.
           claude_args: |
-            --max-turns 12
+            --max-turns 20
             --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(npm test),Bash(npm run lint)"
 
   fix:
