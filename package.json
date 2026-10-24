@@ -1,0 +1,11 @@
+{
+  "name": "ship-it-demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test",
+    "lint": "node scripts/lint.js"
+  }
+}
