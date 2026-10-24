@@ -25,6 +25,7 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          allowed_bots: 'claude[bot]'   # the chain's own PRs are authored by the Claude app; '*' is unsafe on a public repo
           track_progress: true   # tag mode: the action supplies the comment tools; Claude has no way to post otherwise
           prompt: |
             Review PR #${{ github.event.pull_request.number }} in ${{ github.repository }} following REVIEW.md exactly.

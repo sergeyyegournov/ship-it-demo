@@ -1,0 +1,155 @@
+name: artifact-chain
+# Advances the artifact chain one step per merge. Each step is drafted by the Claude app (author: claude[bot]) and opens a PR;
+# a human code owner must approve and merge it. Nothing here approves, merges or deploys.
+#   intent/<n>.md merged  -> spec PR      (Design)
+#   spec/<n>.md merged    -> plan PR      (Build: plan before code)
+#   plans/<n>.md merged   -> feature PR   (Build: code + tests against the accepted plan)
+#   manual dispatch       -> release-record PR (Deploy: deterministic record; gate = approval + environment)
+on:
+  push:
+    branches: [main]
+    paths: ['intent/*.md', 'spec/*.md', 'plans/*.md']
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: 'Prepare a release-record PR for this commit (short sha); empty = main HEAD'
+        required: false
+      release:
+        description: 'Set true to prepare a release record'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: artifact-chain
+  cancel-in-progress: false
+
+jobs:
+  route:
+    runs-on: ubuntu-latest
+    outputs:
+      stage: ${{ steps.r.outputs.stage }}
+      name: ${{ steps.r.outputs.name }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 2 }
+      - id: r
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = workflow_dispatch ]; then
+            [ "${{ inputs.release }}" = true ] && echo "stage=release" >> "$GITHUB_OUTPUT" || echo "stage=none" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          added=$(git diff --name-only --diff-filter=A HEAD^ HEAD -- 'intent/*.md' 'spec/*.md' 'plans/*.md' | grep -v -e README.md -e _template.md || true)
+          [ "$(echo "$added" | grep -c .)" -eq 1 ] || { echo "stage=none" >> "$GITHUB_OUTPUT"; echo "::notice::not exactly one new artifact in this push"; exit 0; }
+          name=$(basename "$added" .md)
+          [[ "$name" =~ ^[a-z0-9][a-z0-9-]{0,60}$ ]] || { echo "::error::artifact name must be lowercase-kebab: $name"; exit 1; }
+          case "$added" in
+            intent/*) stage=spec ;;
+            spec/*)   stage=plan ;;
+            plans/*)  stage=build ;;
+          esac
+          echo "stage=$stage" >> "$GITHUB_OUTPUT"; echo "name=$name" >> "$GITHUB_OUTPUT"
+
+  draft:
+    needs: route
+    if: needs.route.outputs.stage == 'spec' || needs.route.outputs.stage == 'plan' || needs.route.outputs.stage == 'build'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+    env:
+      STAGE: ${{ needs.route.outputs.stage }}
+      NAME: ${{ needs.route.outputs.name }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Skip if this step's PR is already open
+        id: dup
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          case "$STAGE" in spec) b="spec/$NAME";; plan) b="plan/$NAME";; build) b="feat/$NAME";; esac
+          echo "branch=$b" >> "$GITHUB_OUTPUT"
+          echo "open=$(gh pr list --state open --head "$b" --json number --jq length)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Draft spec (intent merged)
+        if: steps.dup.outputs.open == '0' && needs.route.outputs.stage == 'spec'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Stage: Design. Read intent/${{ needs.route.outputs.name }}.md, CLAUDE.md and .claude/skills/security-policy/SKILL.md.
+            Write spec/${{ needs.route.outputs.name }}.md with sections: Requirements (numbered, each testable), Design (endpoints, data, error cases),
+            Flagged concerns (anything ambiguous or in tension with the security policy, addressed to the policy owner), Out of scope.
+            Do not write application code. Then create branch ${{ steps.dup.outputs.branch }}, commit, push, and open a pull request titled
+            "spec: ${{ needs.route.outputs.name }}" whose body links the intent. Do not merge or approve anything.
+          claude_args: |
+            --max-turns 15
+            --allowedTools "Read,Grep,Glob,Write,Edit,Bash(git checkout:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git status:*),Bash(gh pr create:*)"
+      - name: Draft plan (spec merged)
+        if: steps.dup.outputs.open == '0' && needs.route.outputs.stage == 'plan'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Stage: Build, plan mode. Read spec/${{ needs.route.outputs.name }}.md, the matching intent, CLAUDE.md, src/ and test/.
+            Write plans/${{ needs.route.outputs.name }}.md with sections: Files changed, Order of work, Risks, Proof (exact commands and expected results).
+            Write no application code. Create branch ${{ steps.dup.outputs.branch }}, commit, push, and open a pull request titled
+            "plan: ${{ needs.route.outputs.name }}" linking the spec. Do not merge or approve anything.
+          claude_args: |
+            --max-turns 15
+            --allowedTools "Read,Grep,Glob,Write,Edit,Bash(git checkout:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git status:*),Bash(gh pr create:*)"
+      - name: Implement the accepted plan (plan merged)
+        if: steps.dup.outputs.open == '0' && needs.route.outputs.stage == 'build'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Stage: Build. The accepted plan is plans/${{ needs.route.outputs.name }}.md (spec: spec/${{ needs.route.outputs.name }}.md).
+            Implement exactly that plan, with tests including rejection paths. Follow CLAUDE.md and the security-policy skill.
+            Run `npm test && npm run lint`; both must pass. If you must deviate from the plan, update the plan file in the same PR and say why in the PR body.
+            Create branch ${{ steps.dup.outputs.branch }}, commit, push, and open a pull request titled "feat: ${{ needs.route.outputs.name }}" whose body
+            links the spec and plan and lists the commands you ran with their results. Do not merge, approve or deploy.
+          claude_args: |
+            --max-turns 30
+            --allowedTools "Read,Grep,Glob,Write,Edit,Bash(npm test),Bash(npm run lint),Bash(git checkout:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git status:*),Bash(git diff:*),Bash(gh pr create:*)"
+
+  release:
+    needs: route
+    if: needs.route.outputs.stage == 'release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+      checks: read
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Write the release record (deterministic)
+        id: rec
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          VERSION_IN: ${{ inputs.release_version }}
+        run: |
+          v=$(scripts/make_release_record.sh ${VERSION_IN:+"$VERSION_IN"} | jq -r .version)
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      - name: Open the release-record PR
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            A release record was written to releases/${{ steps.rec.outputs.version }}.json (do not edit it).
+            Create branch release/${{ steps.rec.outputs.version }}, commit only that file, push, and open a pull request titled
+            "release: ${{ steps.rec.outputs.version }}" whose body summarizes the record's changes and evidence.
+            State plainly that merging requires a code owner's approval and that the production deployment needs a separate environment approval.
+            Do not merge, approve or deploy.
+          claude_args: |
+            --max-turns 8
+            --allowedTools "Read,Bash(git checkout:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git status:*),Bash(gh pr create:*)"
