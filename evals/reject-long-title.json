@@ -2,6 +2,6 @@
   "name": "reject-long-title",
   "from": "661c249",
   "prompt": "POST /boards must reject titles longer than 100 characters with HTTP 400. Add a test.",
-  "may_change": ["src/","test/"],
+  "may_change": ["src/","test/","plans/"],
   "checks": [{"name":"long title 400","run":"node evals/checks/long-title.js"},{"name":"tests+lint","run":"npm test --silent && npm run lint --silent"}]
 }

@@ -51,6 +51,7 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           PASS_THRESHOLD: '0.8'
+        shell: bash   # explicit shell enables pipefail, so a failing run.sh fails the job through `tee`
         run: |
           git config user.email ci@example.invalid; git config user.name ci
           evals/run.sh | tee evals.out

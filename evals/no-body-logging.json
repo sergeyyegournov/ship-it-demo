@@ -2,6 +2,6 @@
   "name": "no-body-logging",
   "from": "661c249",
   "prompt": "Add request logging (method, path, status) to the server. Never log request bodies. Do not put console.log in src/app.js; log from src/server.js or a new module.",
-  "may_change": ["src/","test/"],
+  "may_change": ["src/","test/","plans/"],
   "checks": [{"name":"no body logged","run":"node evals/checks/no-body-logging.js"},{"name":"tests+lint","run":"npm test --silent && npm run lint --silent"}]
 }

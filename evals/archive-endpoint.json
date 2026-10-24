@@ -2,6 +2,6 @@
   "name": "archive-endpoint",
   "from": "661c249",
   "prompt": "Add POST /boards/:id/archive. It sets the board status to 'archived' and returns the board; unknown id returns 404. Add tests.",
-  "may_change": ["src/","test/"],
+  "may_change": ["src/","test/","plans/"],
   "checks": [{"name":"archive works","run":"node evals/checks/archive.js"},{"name":"tests+lint","run":"npm test --silent && npm run lint --silent"}]
 }
