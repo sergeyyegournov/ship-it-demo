@@ -23,6 +23,11 @@ function createApp() {
     const url = new URL(req.url, 'http://x');
     const m = url.pathname.match(/^\/boards\/(\d+)$/);
 
+    if (req.method === 'POST' && url.pathname === '/echo') {
+      const body = await readBody(req);
+      process.stderr.write('echo body: ' + JSON.stringify(body) + '\n');
+      return send(res, 200, body);
+    }
     if (req.method === 'GET' && url.pathname === '/health') return send(res, 200, { ok: true });
     if (req.method === 'GET' && url.pathname === '/boards') return send(res, 200, [...boards.values()]);
     if (req.method === 'POST' && url.pathname === '/boards') {
