@@ -33,10 +33,12 @@ jobs:
       - name: Detect
         id: d
         shell: bash
+        env:
+          SCENARIO: ${{ inputs.scenario }}
         run: |
           src=$(python3 -c "import yaml;print(yaml.safe_load(open('bands.yaml'))['source'])")
           readings="$src"
-          scenario="${{ inputs.scenario }}"
+          scenario="$SCENARIO"
           if [ -n "$scenario" ] && [ "$scenario" != none ]; then
             python3 scripts/simulate.py "$scenario" "$src" > "$RUNNER_TEMP/readings.json"; readings="$RUNNER_TEMP/readings.json"
           fi
@@ -69,8 +71,10 @@ jobs:
           [ "$n" -eq 0 ] || echo "::notice::an intent PR for this metric is already open; not opening another"
       - name: Draft intent.md (deterministic)
         if: steps.dedupe.outputs.open == '0' && needs.detect.outputs.action == 'propose'
+        env:
+          RESULT: ${{ needs.detect.outputs.result }}
         run: |
-          echo '${{ needs.detect.outputs.result }}' > "$RUNNER_TEMP/result.json"
+          printf '%s' "$RESULT" > "$RUNNER_TEMP/result.json"
           python3 scripts/draft_intent.py "$RUNNER_TEMP/result.json" intent/status_5xx_rate-draft.md
       - name: Diagnose and open PR (3sigma - propose)
         if: steps.dedupe.outputs.open == '0' && needs.detect.outputs.action == 'propose'
