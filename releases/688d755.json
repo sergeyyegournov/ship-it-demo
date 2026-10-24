@@ -1,0 +1,23 @@
+{
+  "version": "688d755",
+  "requested_by": "claude[bot]",
+  "requested_at": "2026-10-24T20:27:01Z",
+  "changes": [
+    "feat: archive-board (#6)",
+    "plan: archive-board (#5)",
+    "spec: archive-board (#4)",
+    "artifact-chain: push only routes; drafting runs under workflow_dispatch (the action rejects push events)",
+    "intent: archive-board (#3)",
+    "artifact-chain: intent entry point so the Claude app authors the first PR",
+    "README and live-demo runbook",
+    "Chain triggers, release-record generator, setup script; fix deploy depth and allow claude[bot] reviews",
+    "monitor: pass workflow expressions through env",
+    "Maintain stage: bands.yaml, detector + tests, intent drafter, rollback runbook, monitor workflow"
+  ],
+  "evidence": {
+    "pr": "6",
+    "tests": "success",
+    "evals": "success"
+  },
+  "rollback": "runbooks/rollback.md"
+}
