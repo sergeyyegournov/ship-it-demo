@@ -1,0 +1,57 @@
+name: agent-evals
+# Runs the agent evals when agent config changes (CLAUDE.md, .claude/**, evals/**) and on demand.
+# The job always reports a status so it can be a required check; it skips the paid run when config is untouched.
+# Nightly runs are opt-in: set repo variable NIGHTLY_EVALS=true (each run spends API credits).
+on:
+  pull_request:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: agent-evals-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  agent-evals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # each eval starts from an older commit
+      - name: Decide whether to run
+        id: gate
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          NIGHTLY: ${{ vars.NIGHTLY_EVALS }}
+          HAS_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+          FORK: ${{ github.event.pull_request.head.repo.fork }}
+        run: |
+          run=false
+          case "$EVENT" in
+            pull_request)
+              if git diff --name-only "$BASE"...HEAD | grep -qE '^(CLAUDE\.md|\.claude/|evals/)'; then run=true; fi ;;
+            schedule) [ "$NIGHTLY" = "true" ] && run=true ;;
+            workflow_dispatch) run=true ;;
+          esac
+          if [ "$run" = true ] && { [ "$HAS_KEY" != "true" ] || [ "$FORK" = "true" ]; }; then
+            echo "::warning::No API key available (fork or missing secret); skipping paid evals"; run=false
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.run == 'true'
+        with: { node-version: 22 }
+      - name: Install Claude Code
+        if: steps.gate.outputs.run == 'true'
+        run: npm install -g @anthropic-ai/claude-code
+      - name: Run evals
+        if: steps.gate.outputs.run == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PASS_THRESHOLD: '0.8'
+        run: |
+          git config user.email ci@example.invalid; git config user.name ci
+          evals/run.sh | tee evals.out
+          { echo '## Agent evals'; echo '```'; cat evals.out; echo '```'; } >> "$GITHUB_STEP_SUMMARY"

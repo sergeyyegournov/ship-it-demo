@@ -1,0 +1,7 @@
+# Code owners must approve changes to anything that governs the agent or ships to production.
+*                  @sergeyyegournov
+/CLAUDE.md         @sergeyyegournov
+/.claude/          @sergeyyegournov
+/evals/            @sergeyyegournov
+/.github/          @sergeyyegournov
+/releases/         @sergeyyegournov

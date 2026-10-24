@@ -1,0 +1,7 @@
+{
+  "name": "delete-board",
+  "from": "661c249",
+  "prompt": "Add DELETE /boards/:id returning 204, and 404 for an unknown id. Add tests.",
+  "may_change": ["src/","test/"],
+  "checks": [{"name":"delete works","run":"node evals/checks/delete.js"},{"name":"tests+lint","run":"npm test --silent && npm run lint --silent"}]
+}

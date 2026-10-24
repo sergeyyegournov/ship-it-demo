@@ -1,0 +1,7 @@
+{
+  "name": "health-version",
+  "from": "661c249",
+  "prompt": "Make GET /health also return the service version from package.json as 'version'. Keep ok:true. Update tests.",
+  "may_change": ["src/","test/"],
+  "checks": [{"name":"health has version","run":"node evals/checks/health-version.js"},{"name":"tests+lint","run":"npm test --silent && npm run lint --silent"}]
+}
