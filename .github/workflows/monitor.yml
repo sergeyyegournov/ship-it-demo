@@ -1,0 +1,102 @@
+name: monitor
+# Closes the loop: telemetry -> deterministic control-band check -> drafted intent.md PR -> human triage.
+# Detection is plain Python (scripts/detect.py + bands.yaml); a model only acts on a breach, within that tier's action:
+#   1sigma log only | 2sigma diagnose with read-only tools | 3sigma propose a PR (never deploys, never rolls back)
+# Hourly runs are opt-in (repo variable MONITOR_ENABLED=true). Run it on demand with a simulated scenario for the demo.
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: 'Simulated telemetry: none (committed data), spike (3sigma), drift (2sigma)'
+        type: choice
+        options: [none, spike, drift]
+        default: none
+permissions:
+  contents: read
+concurrency:
+  group: monitor
+  cancel-in-progress: false
+
+jobs:
+  detect:
+    if: github.event_name == 'workflow_dispatch' || vars.MONITOR_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      tier: ${{ steps.d.outputs.tier }}
+      action: ${{ steps.d.outputs.action }}
+      result: ${{ steps.d.outputs.result }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install pyyaml
+      - name: Detect
+        id: d
+        shell: bash
+        run: |
+          src=$(python3 -c "import yaml;print(yaml.safe_load(open('bands.yaml'))['source'])")
+          readings="$src"
+          scenario="${{ inputs.scenario }}"
+          if [ -n "$scenario" ] && [ "$scenario" != none ]; then
+            python3 scripts/simulate.py "$scenario" "$src" > "$RUNNER_TEMP/readings.json"; readings="$RUNNER_TEMP/readings.json"
+          fi
+          result=$(python3 scripts/detect.py bands.yaml < "$readings")
+          echo "$result"
+          echo "tier=$(jq -r .tier <<<"$result")" >> "$GITHUB_OUTPUT"
+          echo "action=$(jq -r .action <<<"$result")" >> "$GITHUB_OUTPUT"
+          echo "result=$result" >> "$GITHUB_OUTPUT"
+          { echo "## Control band check"; echo '```json'; jq . <<<"$result"; echo '```'; echo "Scenario: ${scenario:-scheduled}"; } >> "$GITHUB_STEP_SUMMARY"
+
+  respond:
+    needs: detect
+    if: needs.detect.outputs.action == 'diagnose' || needs.detect.outputs.action == 'propose'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Skip if an open intent PR already exists for this metric
+        id: dedupe
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          n=$(gh pr list --state open --json headRefName --jq '[.[] | select(.headRefName | startswith("intent/status_5xx_rate-"))] | length')
+          echo "open=$n" >> "$GITHUB_OUTPUT"
+          [ "$n" -eq 0 ] || echo "::notice::an intent PR for this metric is already open; not opening another"
+      - name: Draft intent.md (deterministic)
+        if: steps.dedupe.outputs.open == '0' && needs.detect.outputs.action == 'propose'
+        run: |
+          echo '${{ needs.detect.outputs.result }}' > "$RUNNER_TEMP/result.json"
+          python3 scripts/draft_intent.py "$RUNNER_TEMP/result.json" intent/status_5xx_rate-draft.md
+      - name: Diagnose and open PR (3sigma - propose)
+        if: steps.dedupe.outputs.open == '0' && needs.detect.outputs.action == 'propose'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            A control band was breached: ${{ needs.detect.outputs.result }}
+            An uncommitted draft is at intent/status_5xx_rate-draft.md (written by a script; keep its structure).
+            1. Using read-only inspection (git log, releases/, src/), fill the "Open questions" section with your best diagnosis of the likely cause
+               and name the suspect release. Do not claim certainty you do not have.
+            2. Create branch intent/status_5xx_rate-$(date -u +%Y%m%d%H%M), rename the draft to intent/status_5xx_rate-<date>.md,
+               commit, push, and open a pull request titled "intent: status_5xx_rate 3sigma" with the file's Problem section as its body.
+            3. You may NOT run scripts/deploy.sh or scripts/rollback.sh. Rollback is proposed in the intent for a human to run.
+          claude_args: |
+            --max-turns 15
+            --allowedTools "Read,Grep,Glob,Edit,Write,Bash(git log:*),Bash(git show:*),Bash(git checkout:*),Bash(git mv:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git status:*),Bash(date:*),Bash(ls:*),Bash(gh pr create:*)"
+      - name: Diagnose only (2sigma)
+        if: steps.dedupe.outputs.open == '0' && needs.detect.outputs.action == 'diagnose'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            A 2sigma control band was breached: ${{ needs.detect.outputs.result }}
+            Read-only: inspect git log, releases/ and src/ and report in at most 10 lines the likely cause and whether this needs
+            a 3sigma-style intent. Change nothing; open no PR.
+          claude_args: |
+            --max-turns 8
+            --allowedTools "Read,Grep,Glob,Bash(git log:*),Bash(git show:*),Bash(ls:*)"

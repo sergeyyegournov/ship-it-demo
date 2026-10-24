@@ -14,6 +14,8 @@ jobs:
         with: { node-version: 22 }
       - run: npm test
       - run: npm run lint
+      - name: detector tests
+        run: pip install pyyaml && python3 -m unittest scripts/test_detect.py
       - name: eval definitions are satisfiable (free, no API)
         run: |
           git fetch --unshallow || true
