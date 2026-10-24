@@ -1,0 +1,58 @@
+name: claude-review
+# Automated first-pass review on every PR, plus @claude on PR comments to apply fixes.
+# The reviewer never approves; branch protection requires a human code-owner approval.
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+jobs:
+  review:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          use_sticky_comment: 'true'
+          prompt: |
+            Review PR #${{ github.event.pull_request.number }} in ${{ github.repository }} following REVIEW.md exactly.
+            Compare the diff with plans/ and spec/ files referenced in the PR description.
+            Post one summary comment. Do not approve or request changes.
+          claude_args: |
+            --max-turns 12
+            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(npm test),Bash(npm run lint)"
+
+  fix:
+    # Only someone with write access can trigger this (the action enforces it); fixes arrive as commits/PRs, never merges.
+    if: >
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_args: |
+            --max-turns 15
+            --allowedTools "Read,Edit,Write,Grep,Glob,Bash(npm test),Bash(npm run lint),Bash(git diff:*),Bash(git log:*)"

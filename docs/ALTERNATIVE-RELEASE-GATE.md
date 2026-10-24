@@ -25,7 +25,7 @@ If you run this on a private Pro/Team repo, use a **release-record PR** instead.
 3. `deploy.yml` triggers only on pushes to `main` that touch `releases/*.json`, and deploys the `version` in the
    newest file. The merged PR (approver, timestamp, evidence) is the release record.
 4. The `production-gate.sh` PreToolUse hook is unchanged: it denies agent-initiated production deploys unless
-   the version has a merged release record, i.e. `git log origin/main -- releases/<version>.json` is non-empty.
+   the version has a merged release record, i.e. `releases/<version>.json` exists in the tree of `origin/main` (a deleted record no longer authorizes).
 
 ## Workflow trigger
 ```yaml

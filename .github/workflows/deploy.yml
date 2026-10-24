@@ -1,0 +1,62 @@
+name: deploy
+# Production release. Two independent human gates:
+#   1. releases/<version>.json merged via a PR approved by someone other than its author (checked below)
+#   2. the `production` environment's required reviewer approves the deployment run
+# Agents may open the release PR; they cannot merge it or approve the deployment.
+on:
+  push:
+    branches: [main]
+    paths: ['releases/*.json']
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.rec.outputs.version }}
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 2 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Find and validate the release record
+        id: rec
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          files=$(git diff --name-only --diff-filter=AM HEAD^ HEAD -- 'releases/*.json')
+          [ "$(echo "$files" | grep -c .)" -eq 1 ] || { echo "::error::expected exactly one added/changed release record, got: $files"; exit 1; }
+          version=$(jq -er .version "$files")
+          [ "releases/$version.json" = "$files" ] || { echo "::error::file name must match version"; exit 1; }
+          for k in requested_by requested_at changes; do jq -e "has(\"$k\")" "$files" >/dev/null || { echo "::error::record missing '$k'"; exit 1; }; done
+          [[ "$version" =~ ^[0-9a-f]{7,40}$ ]] || { echo "::error::version must be a commit hash"; exit 1; }
+          git cat-file -e "$version^{commit}" || { echo "::error::version $version is not a commit in this repo"; exit 1; }
+
+          # Gate 1: the PR that landed this record must have an approval from someone other than the PR author.
+          pr=$(gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/pulls" --jq '.[0].number')
+          [ -n "$pr" ] || { echo "::error::record was not merged through a pull request"; exit 1; }
+          author=$(gh api "repos/${{ github.repository }}/pulls/$pr" --jq .user.login)
+          approver=$(gh api "repos/${{ github.repository }}/pulls/$pr/reviews" --paginate \
+            --jq "[.[] | select(.state==\"APPROVED\" and .user.login != \"$author\")] | last | .user.login // empty")
+          [ -n "$approver" ] || { echo "::error::PR #$pr has no approval from anyone other than its author ($author)"; exit 1; }
+          echo "Release $version authorized by $approver via PR #$pr (author: $author)" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Checks on the release commit
+        run: |
+          git checkout -q "${{ steps.rec.outputs.version }}"
+          npm test && npm run lint
+
+  deploy:
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production   # required reviewer approves here
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: '${{ needs.validate.outputs.version }}' }
+      - name: Deploy (simulated)
+        run: scripts/deploy.sh production "${{ needs.validate.outputs.version }}" | tee -a "$GITHUB_STEP_SUMMARY"
