@@ -3,9 +3,22 @@
 Spec: [`spec/archive-board.md`](../spec/archive-board.md). Intent: [`intent/archive-board.md`](../intent/archive-board.md).
 Status: draft, awaiting review.
 
-This plan uses the spec's proposed defaults for all 15 requirements. The spec is still a draft, and its Flagged concerns
-are still open. If review overrides a default, update this plan before writing code. For example, review could allow
-`413` (concern 4), ignore unknown query parameters (concern 5), or drop unarchive or `?archived=true` (concern 8).
+This plan uses the spec's proposed defaults for all 15 requirements.
+
+## Accepted decisions
+
+On PR #5, sergeyyegournov (2026-10-24) accepted the spec's proposed defaults for the open Flagged concerns:
+
+| Concern | Accepted default |
+|---|---|
+| 1. Unauthenticated state mutation | Archive and unarchive are as open as `POST /boards`. No authn/authz in this change. |
+| 4. Oversized body status code | `400 {"error":"invalid body"}`, not `413`. |
+| 5. Unknown query parameters on `GET /boards` | Rejected with `400 {"error":"invalid query"}` (R11 as written). |
+| 8. Unarchive and `?archived=true` | Both kept (R4, R5, R8). |
+
+Concerns 2, 3, 6 and 7 stay out of scope as the spec describes. `spec/archive-board.md:3` still says "draft, awaiting
+code-owner review". This plan PR contains only the plan, so it doesn't edit the spec. The spec owner should update
+that status line to reflect these decisions. Any later override must be written here before code changes.
 
 ## Files changed
 
@@ -42,13 +55,21 @@ The following files are **not** changed:
    through `Number(...)`. If the result fails `Number.isSafeInteger`, it is treated as unknown.
 4. **`readSmallBody(req, limit = 1024)`** returns a promise that always settles, as
    `{ ok: true, value }` or `{ ok: false }`.
-   - If the `content-length` header is greater than `limit`, it resolves `{ ok: false }` right away.
-   - It counts bytes as `Buffer` chunks arrive. When the total passes `limit`, it stops buffering and resolves
-     `{ ok: false }`. It keeps calling `req.resume()` so the client can finish sending and receive the 400. Memory
-     stays bounded.
+   - **One rule for every rejection path: drain, then settle.** The reader never resolves early. It resolves only
+     from an `end`, `error` or `close` listener, so the handler never writes the 400 while the client is still
+     uploading. That avoids `ECONNRESET`/`EPIPE` on the client in place of the JSON response.
+   - If the `content-length` header is greater than `limit`, it marks the read as oversized and stops buffering, but
+     keeps the stream flowing (`req.resume()`). On `end` it resolves `{ ok: false }`.
+   - It counts bytes as `Buffer` chunks arrive. When the total passes `limit`, it marks the read as oversized, drops
+     the buffered chunks and stops buffering. The stream keeps flowing, so memory stays bounded. On `end` it resolves
+     `{ ok: false }`.
    - It decodes UTF-8 only once, on `end`, so a multi-byte character split across chunks is decoded correctly.
-   - On `error` or `aborted`, it resolves `{ ok: false }` and doesn't throw. A response that can't be delivered is
-     dropped (spec: "no response is guaranteed").
+   - On `error`, it resolves `{ ok: false }` and doesn't throw.
+   - On `close`, if `!req.complete` (the client disconnected before the body finished), it resolves `{ ok: false }`.
+     It doesn't rely on the deprecated `aborted` event, so the promise settles on every Node version and no pending
+     promise is leaked (spec: Error cases). A response that can't be delivered is dropped (spec: "no response is
+     guaranteed").
+   - Settling is guarded by a `settled` flag, so a later `close` after `end` or `error` is a no-op.
    - Valid body: the raw body is empty, or `JSON.parse` returns a plain object (`typeof === 'object'`, not `null`,
      not an array) with zero own keys (R12). `JSON.parse` runs inside `try`/`catch`.
 5. **Order of checks** for archive and unarchive:
@@ -91,32 +112,41 @@ tests show what each requirement covers.
    - R12 and R14: for each endpoint, send each of these bodies: `not json`, `[]`, `"x"`, `null`,
      `{"archived":true}`, and a 1025-byte body. Each returns `400 {"error":"invalid body"}`, and a follow-up
      `GET /boards/:id` shows the board unchanged. Empty bodies and `{}` are accepted.
-   - R13: open a raw `node:net` socket. Send `POST /boards/1/archive` with `content-length: 100` and only part of the
-     body, then destroy the socket. Afterwards `GET /health` still returns `200`. Also confirm that a very large body
-     sent without `content-length` (chunked) gets a `400` and doesn't hang.
+   - Other methods: `GET /boards/:id/archive` and `GET /boards/:id/unarchive` on a board the test created return
+     `404`, and the board is unchanged (design item 3).
+   - R13: create a board first and use its id. Open a raw `node:net` socket. Send `POST /boards/<id>/archive` with
+     `content-length: 100` and only part of the body, then destroy the socket. Afterwards `GET /health` still
+     returns `200` and the board is unchanged.
+   - R13/R14, chunked large body: also over a raw `node:net` socket, not `fetch`. Send
+     `POST /boards/<id>/archive` with `transfer-encoding: chunked` and well over 1 KiB of chunks, then the terminating
+     `0\r\n\r\n` chunk. Assert that the client reads an `HTTP/1.1 400` status line and the `{"error":"invalid body"}`
+     body before the socket closes, and that the test finishes within a short timeout (no hang).
 
    Run `npm test` and confirm the new cases fail and the existing ones pass.
 2. **Commit 2, `feat: archive-board`.** Implement design details 1 to 7 in `src/app.js`. Run `npm test` and
    `npm run lint`, and get both to pass.
-3. Run `node evals/checks/archive.js` and record the expected mismatch (see Risks). Hand off to the `verifier` agent
-   against this plan and the spec. Open the PR. Don't merge or approve.
+3. Hand off to the `verifier` agent against this plan and the spec. Open the PR. Don't merge or approve.
 
 ## Risks
 
-- **The spec is not accepted yet.** Open concerns 1, 4, 5 and 8 could change the requirements. Mitigation: don't
-  start building until the spec PR is approved, and record any overrides here first.
-- **Conflict with the agent eval `evals/archive-endpoint.json`.** Its check (`evals/checks/archive.js`) expects
-  archiving to set `status: 'archived'`. Spec R6 says `status` is unchanged and archiving uses the separate `archived`
-  flag. After this change that eval's "archive works" check **will fail** on `status not archived`. Its 404 check
-  will still pass. This plan follows the spec and does not edit the eval. The eval owner should decide whether to
-  update the check to `archived === true` or retire the eval.
+- **Build-start condition.** Spec PR #4 is merged, so "spec PR approved" is no longer a useful gate. Build starts
+  once this plan PR is merged with concerns 1, 4, 5 and 8 answered (see Accepted decisions). The stale `Status:` line
+  in `spec/archive-board.md` should be updated by the spec owner, but it doesn't block the build. Any override must
+  be recorded here first.
+- **Design mismatch in the agent eval `evals/archive-endpoint.json`.** `evals/run.sh` creates a fresh worktree at
+  the eval's `from` commit, has an agent implement the eval's own prompt there, and runs `evals/checks/archive.js`
+  against that agent's code. It never runs this branch's `src/app.js`, so this change doesn't make the eval fail and
+  isn't a regression. However, the eval's check encodes a different design (`status: 'archived'`), while spec R6
+  keeps `status` unchanged and uses a separate `archived` flag. This plan doesn't edit the eval. The eval owner may
+  want to align the eval prompt and check with the spec.
 - **Breaking change to `GET /boards` behaviour.**
   - Today it returns every board. After this change it hides archived boards. That part is intended.
   - Unknown query parameters now get `400` (spec concern 5), which could break clients that add cache-busting
     parameters.
 - **Large bodies near the 1 KiB limit.** If the server responds before the client finishes uploading, the client can
-  get `ECONNRESET` or `EPIPE` instead of a `400`. Mitigation: keep draining (`req.resume()`) and respond on `end`.
-  The 1025-byte test catches regressions. A drip-fed huge body still holds a connection open, which is an existing
+  get `ECONNRESET` or `EPIPE` instead of a `400`. Mitigation: every rejection path in `readSmallBody` keeps draining
+  (`req.resume()`) and settles only on `end`, `error` or `close` (design item 4). The 1025-byte test and the raw-socket
+  chunked test catch regressions. A drip-fed huge body still holds a connection open, which is an existing
   limitation of the service. It is not made worse here because memory stays bounded.
 - **Existing crash paths stay out of scope.**
   - `readBody` (`POST /boards`) can still hang, and it is unbounded (spec concerns 2 and 3).
@@ -126,7 +156,8 @@ tests show what each requirement covers.
 - **Timestamp tests.** Assert that `archivedAt` matches ISO-8601 and falls within a few seconds of `Date.now()`.
   Never compare exact values, so the tests aren't flaky.
 - **Shared module state.** `boards` and `nextId` live at module level. Tests must look up the ids they created, and
-  must never assume an empty map or fixed ids, except the deliberately unknown `999999`.
+  must never assume an empty map or fixed ids, except the deliberately unknown `999999` and the 30-digit id. The
+  manual smoke test under Proof uses `/boards/1` only because it runs against a freshly started server.
 
 ## Proof
 
@@ -138,7 +169,6 @@ Run from the repo root on the implementation branch.
 | `npm test` after commit 2 | Exit 0. All tests pass, including every R1 to R14 case in `test/archive.test.js` and the four existing tests. `# fail 0`. |
 | `npm run lint` | Exit 0, no output. No syntax errors and no `console.log` in `src/app.js`. |
 | `grep -c "console\." src/app.js` | `0` |
-| `git diff main -- package.json` | Empty. No dependency changes. |
-| `git diff main --stat` | Only `src/app.js`, `test/archive.test.js` and `plans/archive-board.md` change. `test/app.test.js` is not touched. |
-| `node evals/checks/archive.js` | Exit 1 with `FAIL: status not archived`. This is expected and is the documented eval conflict under Risks. Report it in the PR. Don't hide it. |
+| `git diff origin/main -- package.json` | Empty. No dependency changes. |
+| `git diff origin/main --stat` | Only `src/app.js` and `test/archive.test.js` change, plus `plans/archive-board.md` if the plan was updated during the build. `test/app.test.js` is not touched. |
 | Manual smoke test: `PORT=3999 npm start`, then `curl -s -XPOST localhost:3999/boards -d '{"title":"a"}'`, `curl -s -XPOST localhost:3999/boards/1/archive`, `curl -s localhost:3999/boards`, `curl -s localhost:3999/boards/1`, `curl -s -o /dev/null -w '%{http_code}' 'localhost:3999/boards?archived=nope'` | Responses in order: a board with `"archived":false,"archivedAt":null`. Then a board with `"archived":true` and an ISO `archivedAt`. Then `[]`. Then the archived board. Then `400`. |
