@@ -70,8 +70,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.validate.outputs.version }}
-          fetch-depth: 0   # the version is a short SHA; checkout can only resolve it from a full fetch
+          fetch-depth: 0   # the version is a short SHA, which checkout's own `ref` cannot resolve
+      - name: Check out the release
+        run: git checkout -q "$VERSION"
       - name: Log in to ECR
         id: ecr
         uses: aws-actions/amazon-ecr-login@v2
