@@ -1,0 +1,16 @@
+{
+  "version": "a68f5da",
+  "requested_by": "claude[bot]",
+  "requested_at": "2026-10-25T07:26:52Z",
+  "changes": [
+    "App v2: SPA frontend, /api routes, container image, real AWS deploy (#8)",
+    "Fix deploy checkout of short SHA; give release-PR reviews more turns",
+    "release: 688d755 (#7)"
+  ],
+  "evidence": {
+    "pr": "8",
+    "tests": "success",
+    "evals": "success"
+  },
+  "rollback": "runbooks/rollback.md"
+}
