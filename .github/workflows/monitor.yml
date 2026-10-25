@@ -2,17 +2,18 @@ name: monitor
 # Closes the loop: telemetry -> deterministic control-band check -> drafted intent.md PR -> human triage.
 # Detection is plain Python (scripts/detect.py + bands.yaml); a model only acts on a breach, within that tier's action:
 #   1sigma log only | 2sigma diagnose with read-only tools | 3sigma propose a PR (never deploys, never rolls back)
-# Hourly runs are opt-in (repo variable MONITOR_ENABLED=true). Run it on demand with a simulated scenario for the demo.
+# Hourly runs read live CloudWatch metrics and are opt-in (repo variable MONITOR_ENABLED=true).
+# Run it on demand with scenario=live, or with a simulated scenario for the demo.
 on:
   schedule:
     - cron: '17 * * * *'
   workflow_dispatch:
     inputs:
       scenario:
-        description: 'Simulated telemetry: none (committed data), spike (3sigma), drift (2sigma)'
+        description: 'live (CloudWatch ALB metrics), or simulated: none (committed data), spike (3sigma), drift (2sigma)'
         type: choice
-        options: [none, spike, drift]
-        default: none
+        options: [live, none, spike, drift]
+        default: live
 permissions:
   contents: read
 concurrency:
@@ -35,11 +36,18 @@ jobs:
         shell: bash
         env:
           SCENARIO: ${{ inputs.scenario }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION }}
+          ALB_ARN_SUFFIX: ${{ vars.ALB_ARN_SUFFIX }}
+          TG_ARN_SUFFIX: ${{ vars.TG_ARN_SUFFIX }}
         run: |
           src=$(python3 -c "import yaml;print(yaml.safe_load(open('bands.yaml'))['source'])")
           readings="$src"
-          scenario="$SCENARIO"
-          if [ -n "$scenario" ] && [ "$scenario" != none ]; then
+          scenario="${SCENARIO:-live}"   # scheduled runs have no inputs: they are live
+          if [ "$scenario" = live ]; then
+            python3 scripts/cloudwatch_readings.py > "$RUNNER_TEMP/readings.json"; readings="$RUNNER_TEMP/readings.json"
+          elif [ "$scenario" != none ]; then
             python3 scripts/simulate.py "$scenario" "$src" > "$RUNNER_TEMP/readings.json"; readings="$RUNNER_TEMP/readings.json"
           fi
           result=$(python3 scripts/detect.py bands.yaml < "$readings")
@@ -47,7 +55,7 @@ jobs:
           echo "tier=$(jq -r .tier <<<"$result")" >> "$GITHUB_OUTPUT"
           echo "action=$(jq -r .action <<<"$result")" >> "$GITHUB_OUTPUT"
           echo "result=$result" >> "$GITHUB_OUTPUT"
-          { echo "## Control band check"; echo '```json'; jq . <<<"$result"; echo '```'; echo "Scenario: ${scenario:-scheduled}"; } >> "$GITHUB_STEP_SUMMARY"
+          { echo "## Control band check"; echo '```json'; jq . <<<"$result"; echo '```'; echo "Source: $scenario"; } >> "$GITHUB_STEP_SUMMARY"
 
   respond:
     needs: detect

@@ -1,7 +1,9 @@
 # Control bands for the status endpoint. Detection is deterministic (scripts/detect.py); no model decides whether a band is breached.
 # A model only acts on a breach, and only within the tier's action.
 metric: status_5xx_rate          # percent of requests returning 5xx
-source: metrics/status_5xx_rate.json   # hourly readings, oldest first (30 days = 720)
+source: metrics/status_5xx_rate.json   # synthetic hourly readings, oldest first (30 days = 720); used by the demo scenarios
+cloudwatch:                      # live source (scripts/cloudwatch_readings.py): ALB 5xx rate per hour
+  min_requests: 20               # an hour with fewer requests reads 0; a ratio over a handful of requests is noise
 min_sigma: 0.05                  # floor in percent points, so a flat baseline does not turn every blip into a breach
 tiers:                           # checked from worst to least severe; k of the last n readings must exceed mean + sigmas*sigma
   3sigma: { sigmas: 3, k: 1, n: 1, action: propose,  routes: [pull_request, "runbook:rollback-deploy"] }

@@ -17,7 +17,7 @@ jobs:
       - name: the API image builds
         run: docker build --platform linux/amd64 -t status-board-api:ci .
       - name: detector tests
-        run: pip install pyyaml && python3 -m unittest scripts/test_detect.py
+        run: pip install pyyaml && python3 -m unittest scripts/test_detect.py scripts/test_cloudwatch.py
       - name: eval definitions are satisfiable (free, no API)
         run: |
           git fetch --unshallow || true
