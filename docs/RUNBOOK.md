@@ -4,7 +4,7 @@ About 25 minutes. Each stage shows an artifact, a guardrail, and a human checkpo
 Never approve or merge with a script or an agent; the demo's claim is that the agent can't.
 
 ## Setup (once, before the audience arrives)
-- Fresh copy of the repo (template) with `ANTHROPIC_API_KEY`, the Claude app installed, and `scripts/setup-github.sh` applied.
+- Fresh copy of the repo (template) with `ANTHROPIC_API_KEY`, the Claude app installed, and the controls applied from `ship-it-demo-infra` (or `scripts/setup-github.sh`). The AWS stack must be up for the deploy step.
 - Be logged in to GitHub as the code owner, and have the repo's Actions tab open.
 
 ## 0. Show the guardrails first (3 min)

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Status board</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Status board</h1>
+      <span id="health" class="pill" aria-live="polite">checking…</span>
+    </header>
+
+    <form id="new-board" autocomplete="off">
+      <label for="title" class="sr">Board title</label>
+      <input id="title" name="title" placeholder="New board title" maxlength="200">
+      <button type="submit">Add board</button>
+    </form>
+    <p id="error" role="alert" hidden></p>
+
+    <nav aria-label="Filter">
+      <button id="tab-active" aria-pressed="true">Active</button>
+      <button id="tab-archived" aria-pressed="false">Archived</button>
+      <span id="summary"></span>
+    </nav>
+
+    <ul id="boards"></ul>
+    <p id="empty" hidden>No boards here yet.</p>
+  </main>
+  <footer>API version <code id="version">…</code></footer>
+  <script src="board-view.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
