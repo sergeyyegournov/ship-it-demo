@@ -21,3 +21,5 @@ Alarms page; the bands feed the playbook's Maintain stage. A model never decides
 - CloudWatch ALB metrics have roughly a minute of delay.
 - `scripts/load.sh <url> [n]` produces light traffic for the dashboard. A real breach needs a real regression: see the release-and-rollback part of the runbook.
 - The synthetic scenarios (`spike`, `drift`, `none`) remain for demos that must not touch production.
+
+<!-- clock call test -->
