@@ -11,6 +11,8 @@ intent.md -> spec.md -> plan.md -> feature PR -> release record -> deploy -> tel
  (Plan)      (Design)    (Build)    (Test/Review)   (Deploy gate)  (env approval)  (Maintain)
 ```
 
+**New here? Start with [`docs/GUIDE.md`](docs/GUIDE.md)**: every stage, how it is implemented, and how it connects, with diagrams.
+
 | Browse the finished run | Replay it live |
 |---|---|
 | `gh pr list --state merged` and the `intent/ spec/ plans/ releases/` folders | [`docs/RUNBOOK.md`](docs/RUNBOOK.md) |
