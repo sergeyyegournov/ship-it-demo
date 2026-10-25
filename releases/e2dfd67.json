@@ -1,0 +1,22 @@
+{
+  "version": "e2dfd67",
+  "requested_by": "claude[bot]",
+  "requested_at": "2026-10-25T11:18:09Z",
+  "changes": [
+    "Monitoring: request logs, CloudWatch readings for the control bands, docs (#14)",
+    "release: baa81cc (#13)",
+    "deploy: set AWS_REGION for amazon-ecr-login (#12)",
+    "release: 7efd2ae (#11)",
+    "Fix deploy checkout of a short SHA; harden deploy.sh; align title maxlength (#10)",
+    "release: a68f5da (#9)",
+    "App v2: SPA frontend, /api routes, container image, real AWS deploy (#8)",
+    "Fix deploy checkout of short SHA; give release-PR reviews more turns",
+    "release: 688d755 (#7)"
+  ],
+  "evidence": {
+    "pr": "14",
+    "tests": "success",
+    "evals": "success"
+  },
+  "rollback": "runbooks/rollback.md"
+}
