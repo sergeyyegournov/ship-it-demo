@@ -54,3 +54,22 @@ test('view: sorting and summary', () => {
   assert.strictEqual(view.summary([{}], []), '1 active board');
   assert.strictEqual(view.summary([{}, {}], [{}]), '2 active boards, 1 archived');
 });
+
+test('request logs: one JSON line with route, status and version, never ids, queries or bodies', async () => {
+  process.env.APP_VERSION = 'abc1234';
+  const lines = [];
+  try {
+    await withServer({ log: (l) => lines.push(JSON.parse(l)) }, async (base) => {
+      await fetch(`${base}/api/health`);
+      const c = await fetch(`${base}/api/boards`, { method: 'POST', body: JSON.stringify({ title: 'secret-title' }) });
+      const { id } = await c.json();
+      await fetch(`${base}/api/boards/${id}?token=hunter2`);
+      await fetch(`${base}/nope`);
+    });
+  } finally { delete process.env.APP_VERSION; }
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepStrictEqual(lines.map((l) => [l.method, l.route, l.status]),
+    [['POST', '/boards', 201], ['GET', '/boards/:id', 200], ['GET', '/nope', 404]]);
+  assert.ok(lines.every((l) => l.msg === 'request' && l.version === 'abc1234' && typeof l.ms === 'number'));
+  assert.ok(!JSON.stringify(lines).match(/secret-title|hunter2/));
+});

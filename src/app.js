@@ -89,10 +89,23 @@ function serveStatic(webDir, pathname, res) {
 }
 
 // The API is reachable at /x and at /api/x: CloudFront forwards /api/* to the ALB unchanged.
-function createApp({ webDir } = {}) {
+// Route label for logs: ids collapsed, no query string, never a body.
+function routeOf(pathname) {
+  return pathname.replace(/\/\d+(?=\/|$)/g, '/:id');
+}
+
+// log(line) receives one JSON line per request. Health checks are skipped: the ALB probes every few seconds.
+function createApp({ webDir, log } = {}) {
   return http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x');
     const pathname = url.pathname.replace(/^\/api(?=\/)/, '');
+    if (log && pathname !== '/health') {
+      const started = process.hrtime.bigint();
+      res.on('finish', () => log(JSON.stringify({
+        msg: 'request', method: req.method, route: routeOf(pathname), status: res.statusCode,
+        ms: Number((process.hrtime.bigint() - started) / 1000000n), version: process.env.APP_VERSION || 'dev',
+      })));
+    }
     const m = pathname.match(/^\/boards\/(\d+)$/);
     const action = pathname.match(/^\/boards\/(\d+)\/(archive|unarchive)$/);
 
