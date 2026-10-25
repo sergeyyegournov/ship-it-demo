@@ -38,7 +38,10 @@ rollback() {
   aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" || true
 }
 
-aws ecs update-service --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" --task-definition "$new_arn" --desired-count 1 >/dev/null
+# Terraform creates the service at 0 tasks; the first release brings it to 1. After that the count is not ours to change.
+count=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" --query 'services[0].desiredCount' --output text)
+scale=(); [[ "$count" == 0 ]] && scale=(--desired-count 1)
+aws ecs update-service --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" --task-definition "$new_arn" "${scale[@]}" >/dev/null
 echo "waiting for the service to be stable"
 if ! aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE"; then
   echo "service did not become stable" >&2; rollback; exit 1
@@ -53,12 +56,17 @@ for _ in $(seq 1 30); do
 done
 [[ -n "$ok" ]] || { echo "public API did not report $version (got '${got:-nothing}')" >&2; rollback; exit 1; }
 
-tmp=$(mktemp -d)
-git archive "$version" web | tar -x -C "$tmp"
-aws s3 sync "$tmp/web" "s3://$WEB_BUCKET" --delete --cache-control "public,max-age=300" --exclude index.html >/dev/null
-aws s3 cp "$tmp/web/index.html" "s3://$WEB_BUCKET/index.html" --cache-control "no-cache" >/dev/null
-aws cloudfront create-invalidation --distribution-id "$CLOUDFRONT_ID" --paths '/*' >/dev/null
-rm -rf "$tmp"
+publish_web() {
+  # versions from before the SPA existed have no web/; the API alone is the release
+  git cat-file -e "$version:web" 2>/dev/null || { echo "no web/ at $version; leaving the site as is"; return 0; }
+  local tmp; tmp=$(mktemp -d)
+  git archive "$version" web | tar -x -C "$tmp"
+  aws s3 sync "$tmp/web" "s3://$WEB_BUCKET" --delete --cache-control "public,max-age=300" --exclude index.html >/dev/null
+  aws s3 cp "$tmp/web/index.html" "s3://$WEB_BUCKET/index.html" --cache-control "no-cache" >/dev/null
+  aws cloudfront create-invalidation --distribution-id "$CLOUDFRONT_ID" --paths '/*' >/dev/null
+  rm -rf "$tmp"
+}
+publish_web || { echo "publishing web/ failed" >&2; rollback; exit 1; }
 
 mkdir -p .deploy
 printf '{"environment":"%s","version":"%s","task_definition":"%s","previous_task_definition":"%s","url":"https://%s","deployed_at":"%s"}\n' \
