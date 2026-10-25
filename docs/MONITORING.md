@@ -22,4 +22,7 @@ Alarms page; the bands feed the playbook's Maintain stage. A model never decides
 - `scripts/load.sh <url> [n]` produces light traffic for the dashboard. A real breach needs a real regression: see the release-and-rollback part of the runbook.
 - The synthetic scenarios (`spike`, `drift`, `none`) remain for demos that must not touch production.
 
+## Alarm email
+An alarm email means something is broken now: act on it, don't wait for the bands. It goes to the address in the infra repo's `ALARM_EMAIL` secret via the SNS subscription, and only arrives once that subscription has been confirmed.
+
 <!-- phone decision test -->
