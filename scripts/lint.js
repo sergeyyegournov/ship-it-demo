@@ -11,7 +11,7 @@ function walk(dir) {
 }
 
 let failed = false;
-for (const f of ['src', 'test', 'scripts'].flatMap(walk)) {
+for (const f of ['src', 'test', 'scripts', 'web'].flatMap(walk)) {
   try { execFileSync(process.execPath, ['--check', f], { stdio: 'pipe' }); }
   catch (e) { console.error(`syntax error: ${f}\n${e.stderr}`); failed = true; }
 }

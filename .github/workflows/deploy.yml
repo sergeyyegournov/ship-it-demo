@@ -55,10 +55,34 @@ jobs:
     needs: validate
     runs-on: ubuntu-latest
     environment: production   # required reviewer approves here
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION }}
+      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+      ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
+      ECS_SERVICE: ${{ vars.ECS_SERVICE }}
+      ECS_TASK_FAMILY: ${{ vars.ECS_TASK_FAMILY }}
+      WEB_BUCKET: ${{ vars.WEB_BUCKET }}
+      CLOUDFRONT_ID: ${{ vars.CLOUDFRONT_ID }}
+      CLOUDFRONT_DOMAIN: ${{ vars.CLOUDFRONT_DOMAIN }}
+      VERSION: ${{ needs.validate.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: '${{ needs.validate.outputs.version }}'
+          ref: ${{ needs.validate.outputs.version }}
           fetch-depth: 0   # the version is a short SHA; checkout can only resolve it from a full fetch
-      - name: Deploy (simulated)
-        run: scripts/deploy.sh production "${{ needs.validate.outputs.version }}" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Log in to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: Build and push the API image (linux/amd64, tagged with the version)
+        run: |
+          image="${{ steps.ecr.outputs.registry }}/$ECR_REPOSITORY:$VERSION"
+          if aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids imageTag="$VERSION" >/dev/null 2>&1; then
+            echo "image $VERSION already in ECR, reusing it"
+          else
+            docker build --platform linux/amd64 -t "$image" .
+            docker push "$image"
+          fi
+      - name: Deploy
+        run: scripts/deploy.sh production "$VERSION" | tee -a "$GITHUB_STEP_SUMMARY"

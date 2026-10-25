@@ -1,5 +1,6 @@
 #!/bin/bash
-# Apply the repo-level controls the playbook relies on. Idempotent. Usage: scripts/setup-github.sh <owner/repo>
+# SUPERSEDED by https://github.com/sergeyyegournov/ship-it-demo-infra (github/ root), which now owns these controls.
+# Kept as a no-Terraform fallback. Apply the repo-level controls the playbook relies on. Idempotent. Usage: scripts/setup-github.sh <owner/repo>
 # Needs: gh authenticated as a repo admin. Does NOT set secrets (add ANTHROPIC_API_KEY yourself) or approve anything.
 set -eu
 repo=${1:?owner/repo}

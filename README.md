@@ -36,11 +36,11 @@ Not demonstrated (beta/Enterprise or external): Claude Security scans, Claude Ta
 1. Use this repo as a template (or clone it).
 2. `gh secret set ANTHROPIC_API_KEY -R <owner>/<repo>`
 3. Install the [Claude GitHub App](https://github.com/apps/claude) on the repo.
-4. `scripts/setup-github.sh <owner>/<repo>` applies branch protection, the `production` environment and Actions permissions.
+4. GitHub controls (branch protection, the `production` environment, Actions permissions) and the AWS stack come from [`ship-it-demo-infra`](https://github.com/sergeyyegournov/ship-it-demo-infra) (Terraform, applied from Actions behind an approval). `scripts/setup-github.sh` is the no-Terraform fallback for the GitHub half.
    Note: required reviewers on environments need a public repo, or Enterprise. See `docs/ALTERNATIVE-RELEASE-GATE.md` for private repos.
 5. Optional, off by default because they spend credits: repo variables `NIGHTLY_EVALS=true`, `MONITOR_ENABLED=true`.
 
 ## Honest limits
 - Vendor framework; this shows the mechanics, not measured productivity gains.
-- Production is simulated (`scripts/deploy.sh`, synthetic telemetry in `metrics/`).
+- Production is real but small: ECS Fargate behind an ALB for the API, S3 + CloudFront for the SPA (`web/`), deployed by `deploy.yml` / `scripts/deploy.sh`. Telemetry in `metrics/` is still synthetic, and boards live in memory (a redeploy resets them).
 - Eval set is 5 cases; the playbook recommends 20-50.

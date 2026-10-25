@@ -1,4 +1,6 @@
 const http = require('node:http');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const boards = new Map();
 let nextId = 1;
@@ -71,20 +73,40 @@ function parseListQuery(params) {
   return null;
 }
 
-function createApp() {
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css' };
+
+// Local-dev convenience: serve the SPA from webDir. In AWS the SPA comes from S3/CloudFront instead.
+function serveStatic(webDir, pathname, res) {
+  const rel = pathname === '/' ? 'index.html' : pathname.slice(1);
+  const file = path.resolve(webDir, rel);
+  const type = TYPES[path.extname(file)];
+  if (!type || !file.startsWith(path.resolve(webDir) + path.sep)) return false;
+  let body;
+  try { body = fs.readFileSync(file); } catch { return false; }
+  res.writeHead(200, { 'content-type': type });
+  res.end(body);
+  return true;
+}
+
+// The API is reachable at /x and at /api/x: CloudFront forwards /api/* to the ALB unchanged.
+function createApp({ webDir } = {}) {
   return http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x');
-    const m = url.pathname.match(/^\/boards\/(\d+)$/);
-    const action = url.pathname.match(/^\/boards\/(\d+)\/(archive|unarchive)$/);
+    const pathname = url.pathname.replace(/^\/api(?=\/)/, '');
+    const m = pathname.match(/^\/boards\/(\d+)$/);
+    const action = pathname.match(/^\/boards\/(\d+)\/(archive|unarchive)$/);
 
-    if (req.method === 'GET' && url.pathname === '/health') return send(res, 200, { ok: true });
-    if (req.method === 'GET' && url.pathname === '/boards') {
+    if (req.method === 'GET' && pathname === '/health') return send(res, 200, { ok: true });
+    if (req.method === 'GET' && pathname === '/version') {
+      return send(res, 200, { version: process.env.APP_VERSION || 'dev' });
+    }
+    if (req.method === 'GET' && pathname === '/boards') {
       const filter = parseListQuery(url.searchParams);
       if (!filter) return send(res, 400, { error: 'invalid query' });
       const archived = filter === 'archived';
       return send(res, 200, [...boards.values()].filter((b) => b.archived === archived));
     }
-    if (req.method === 'POST' && url.pathname === '/boards') {
+    if (req.method === 'POST' && pathname === '/boards') {
       const body = await readBody(req);
       if (!body || typeof body.title !== 'string' || !body.title.trim()) {
         return send(res, 400, { error: 'title required' });
@@ -112,6 +134,7 @@ function createApp() {
       const board = boards.get(Number(m[1]));
       return board ? send(res, 200, board) : send(res, 404, { error: 'not found' });
     }
+    if (webDir && req.method === 'GET' && serveStatic(webDir, pathname, res)) return;
     return send(res, 404, { error: 'not found' });
   });
 }
