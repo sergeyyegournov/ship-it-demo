@@ -23,8 +23,13 @@ jobs:
         with:
           fetch-depth: 1
       - uses: anthropics/claude-code-action@v1
+        env:
+          ANTHROPIC_BASE_URL: https://sdlc.api.demo.wonderful.ai/api/v1/ai-gateway/anthropic
+          ANTHROPIC_CUSTOM_HEADERS: |
+            X-Wonderful-AI-Gateway-Harness: claude-review
+            X-Wonderful-AI-Gateway-Session-Id: ${{ github.run_id }}-${{ github.job }}
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          anthropic_api_key: ${{ secrets.WONDERFUL_GATEWAY_KEY }}
           allowed_bots: 'claude[bot]'   # the chain's own PRs are authored by the Claude app; '*' is unsafe on a public repo
           track_progress: true   # tag mode: the action supplies the comment tools; Claude has no way to post otherwise
           prompt: |
@@ -32,6 +37,7 @@ jobs:
             Compare the diff with plans/ and spec/ files referenced in the PR description.
             Post one summary comment. Do not approve or request changes.
           claude_args: |
+            --model claude-sonnet-5-5
             --max-turns 20
             --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(npm test),Bash(npm run lint)"
 
@@ -52,8 +58,14 @@ jobs:
         with:
           fetch-depth: 0
       - uses: anthropics/claude-code-action@v1
+        env:
+          ANTHROPIC_BASE_URL: https://sdlc.api.demo.wonderful.ai/api/v1/ai-gateway/anthropic
+          ANTHROPIC_CUSTOM_HEADERS: |
+            X-Wonderful-AI-Gateway-Harness: claude-review
+            X-Wonderful-AI-Gateway-Session-Id: ${{ github.run_id }}-${{ github.job }}
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          anthropic_api_key: ${{ secrets.WONDERFUL_GATEWAY_KEY }}
           claude_args: |
+            --model claude-sonnet-5-5
             --max-turns 15
             --allowedTools "Read,Edit,Write,Grep,Glob,Bash(npm test),Bash(npm run lint),Bash(git diff:*),Bash(git log:*)"
