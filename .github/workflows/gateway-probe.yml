@@ -1,0 +1,34 @@
+name: gateway-probe
+# Manual check that claude-code-action can run through the Wonderful AI gateway instead of api.anthropic.com.
+# Uses the service account key stored as WONDERFUL_GATEWAY_KEY. Nothing is written to the repository.
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: Model id as the gateway lists it
+        default: claude-haiku-5-5
+        required: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: anthropics/claude-code-action@v1
+        env:
+          ANTHROPIC_BASE_URL: https://sdlc.api.demo.wonderful.ai/api/v1/ai-gateway/anthropic
+          ANTHROPIC_CUSTOM_HEADERS: |
+            X-Wonderful-AI-Gateway-Harness: claude-code-action
+            X-Wonderful-AI-Gateway-Session-Id: ${{ github.run_id }}-probe
+        with:
+          anthropic_api_key: ${{ secrets.WONDERFUL_GATEWAY_KEY }}
+          prompt: Reply with the single word pong and do nothing else.
+          claude_args: |
+            --model ${{ inputs.model }}
+            --max-turns 2
