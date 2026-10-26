@@ -1,3 +1,3 @@
 # Test spec
 
-Rename a button label on the board page.
+Export endpoint protected by an API key stored as a secret.
