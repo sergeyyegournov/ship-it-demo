@@ -1,4 +1,3 @@
 # Test spec
 
-Export endpoint protected by an API key stored as a secret.
-A second line.
+Rename a button label on the board page.
