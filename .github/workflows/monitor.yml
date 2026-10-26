@@ -87,8 +87,13 @@ jobs:
       - name: Diagnose and open PR (3sigma - propose)
         if: steps.dedupe.outputs.open == '0' && needs.detect.outputs.action == 'propose'
         uses: anthropics/claude-code-action@v1
+        env:
+          ANTHROPIC_BASE_URL: https://sdlc.api.demo.wonderful.ai/api/v1/ai-gateway/anthropic
+          ANTHROPIC_CUSTOM_HEADERS: |
+            X-Wonderful-AI-Gateway-Harness: monitor
+            X-Wonderful-AI-Gateway-Session-Id: ${{ github.run_id }}-${{ github.job }}
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          anthropic_api_key: ${{ secrets.WONDERFUL_GATEWAY_KEY }}
           prompt: |
             A control band was breached: ${{ needs.detect.outputs.result }}
             An uncommitted draft is at intent/status_5xx_rate-draft.md (written by a script; keep its structure).
@@ -98,17 +103,24 @@ jobs:
                commit, push, and open a pull request titled "intent: status_5xx_rate 3sigma" with the file's Problem section as its body.
             3. You may NOT run scripts/deploy.sh or scripts/rollback.sh. Rollback is proposed in the intent for a human to run.
           claude_args: |
+            --model claude-sonnet-5-5
             --max-turns 15
             --allowedTools "Read,Grep,Glob,Edit,Write,Bash(git log:*),Bash(git show:*),Bash(git checkout:*),Bash(git mv:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git status:*),Bash(date:*),Bash(ls:*),Bash(gh pr create:*)"
       - name: Diagnose only (2sigma)
         if: steps.dedupe.outputs.open == '0' && needs.detect.outputs.action == 'diagnose'
         uses: anthropics/claude-code-action@v1
+        env:
+          ANTHROPIC_BASE_URL: https://sdlc.api.demo.wonderful.ai/api/v1/ai-gateway/anthropic
+          ANTHROPIC_CUSTOM_HEADERS: |
+            X-Wonderful-AI-Gateway-Harness: monitor
+            X-Wonderful-AI-Gateway-Session-Id: ${{ github.run_id }}-${{ github.job }}
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          anthropic_api_key: ${{ secrets.WONDERFUL_GATEWAY_KEY }}
           prompt: |
             A 2sigma control band was breached: ${{ needs.detect.outputs.result }}
             Read-only: inspect git log, releases/ and src/ and report in at most 10 lines the likely cause and whether this needs
             a 3sigma-style intent. Change nothing; open no PR.
           claude_args: |
+            --model claude-sonnet-5-5
             --max-turns 8
             --allowedTools "Read,Grep,Glob,Bash(git log:*),Bash(git show:*),Bash(ls:*)"

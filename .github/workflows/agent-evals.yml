@@ -26,7 +26,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.event.pull_request.base.sha }}
           NIGHTLY: ${{ vars.NIGHTLY_EVALS }}
-          HAS_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+          HAS_KEY: ${{ secrets.WONDERFUL_GATEWAY_KEY != '' }}
           FORK: ${{ github.event.pull_request.head.repo.fork }}
         run: |
           run=false
@@ -49,7 +49,12 @@ jobs:
       - name: Run evals
         if: steps.gate.outputs.run == 'true'
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.WONDERFUL_GATEWAY_KEY }}
+          ANTHROPIC_BASE_URL: https://sdlc.api.demo.wonderful.ai/api/v1/ai-gateway/anthropic
+          ANTHROPIC_CUSTOM_HEADERS: |
+            X-Wonderful-AI-Gateway-Harness: agent-evals
+            X-Wonderful-AI-Gateway-Session-Id: ${{ github.run_id }}-evals
+          EVAL_MODEL: claude-sonnet-5-5
           PASS_THRESHOLD: '0.8'
         shell: bash   # explicit shell enables pipefail, so a failing run.sh fails the job through `tee`
         run: |
