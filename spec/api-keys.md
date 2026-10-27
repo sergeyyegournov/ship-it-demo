@@ -18,3 +18,7 @@ Partner tools want to read and create boards without a person logged in. This sp
 
 - The key secret and its hash must never be written to logs.
 - Who may issue keys is not decided yet: any logged-in user, or admins only.
+
+## Out of scope
+
+- Per-key rate limits.
