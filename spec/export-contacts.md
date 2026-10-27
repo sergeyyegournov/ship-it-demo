@@ -17,3 +17,4 @@ personal data, because the security team has already approved it.
 3. The export is available to partners only.
 4. Exports are logged.
 5. Exports are rate limited.
+6. Exports expire after 7 days.
